@@ -1,4 +1,4 @@
-specVersion: 0.0.1
+specVersion: 0.0.2
 schema:
   file: ./schema.graphql
 dataSources:
@@ -8,25 +8,20 @@ dataSources:
     source:
       address: "0xd0c2A3C9127966E9dfED75E04a4341fBaBD77e43"
       abi: Roots
+      startBlock: 14017669
     mapping:
       kind: ethereum/events
       apiVersion: 0.0.5
       language: wasm/assemblyscript
       entities:
-        - Approval
-        - ApprovalForAll
-        - OwnershipTransferred
         - Transfer
       abis:
         - name: Roots
           file: ./abis/Roots.json
       eventHandlers:
-        - event: Approval(indexed address,indexed address,indexed uint256)
-          handler: handleApproval
-        - event: ApprovalForAll(indexed address,indexed address,bool)
-          handler: handleApprovalForAll
-        - event: OwnershipTransferred(indexed address,indexed address)
-          handler: handleOwnershipTransferred
         - event: Transfer(indexed address,indexed address,indexed uint256)
           handler: handleTransfer
+      callHandlers:
+        - function: updatePrice(uint256)
+          handler: handleUpdatePrice
       file: ./src/mapping.ts

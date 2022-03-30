@@ -1,70 +1,82 @@
-import { BigInt } from "@graphprotocol/graph-ts"
+import { BigInt } from "@graphprotocol/graph-ts";
 import {
   Roots,
-  Approval,
-  ApprovalForAll,
-  OwnershipTransferred,
-  Transfer
-} from "../generated/Roots/Roots"
-import { ExampleEntity } from "../generated/schema"
+  Transfer as TransferEvent,
+  UpdatePriceCall,
+} from "../generated/Roots/Roots";
+import { RootsPhoto, RootsStatus, Transfer, Wallet } from "../generated/schema";
 
-export function handleApproval(event: Approval): void {
-  // Entities can be loaded from the store using a string ID; this ID
-  // needs to be unique across all entities of the same type
-  let entity = ExampleEntity.load(event.transaction.from.toHex())
-
-  // Entities only exist after they have been saved to the store;
-  // `null` checks allow to create entities on demand
-  if (!entity) {
-    entity = new ExampleEntity(event.transaction.from.toHex())
-
-    // Entity fields can be set using simple assignments
-    entity.count = BigInt.fromI32(0)
-  }
-
-  // BigInt and BigDecimal math are supported
-  entity.count = entity.count + BigInt.fromI32(1)
-
-  // Entity fields can be set based on event parameters
-  entity.owner = event.params.owner
-  entity.spender = event.params.spender
-
-  // Entities can be written to the store with `.save()`
-  entity.save()
-
-  // Note: If a handler doesn't require existing field values, it is faster
-  // _not_ to load the entity from the store. Instead, create it fresh with
-  // `new Entity(...)`, set the fields that should be updated and save the
-  // entity back to the store. Fields that were not set or unset remain
-  // unchanged, allowing for partial updates to be applied.
-
-  // It is also possible to access smart contracts from mappings. For
-  // example, the contract that has emitted the event can be connected to
-  // with:
-  //
-  // let contract = Contract.bind(event.address)
-  //
-  // The following functions can then be called on this contract to access
-  // state variables and other data:
-  //
-  // - contract._balances(...)
-  // - contract._operatorApprovals(...)
-  // - contract._tokenApprovals(...)
-  // - contract.balanceOf(...)
-  // - contract.getApproved(...)
-  // - contract.isApprovedForAll(...)
-  // - contract.name(...)
-  // - contract.owner(...)
-  // - contract.ownerOf(...)
-  // - contract.price(...)
-  // - contract.royaltyInfo(...)
-  // - contract.supportsInterface(...)
-  // - contract.symbol(...)
-  // - contract.tokenURI(...)
+export function handleUpdatePrice(event: UpdatePriceCall): void {
+  let rootsStatus = RootsStatus.load("roots.status");
+  if (!rootsStatus) return;
+  rootsStatus.primarySalePrice = event.inputs.newPrice;
+  rootsStatus.save();
 }
 
-export function handleApprovalForAll(event: ApprovalForAll): void {}
+export function handleTransfer(event: TransferEvent): void {
+  const tokenId = event.params.id;
+  const fromAddress = event.params.from;
+  const toAddress = event.params.to;
+  const contract = Roots.bind(event.address);
 
-export function handleOwnershipTransferred(event: OwnershipTransferred): void {}
+  let rootsStatus = RootsStatus.load("roots.status");
+  if (!rootsStatus) {
+    rootsStatus = new RootsStatus("roots.status");
+    rootsStatus.maxPhotos = BigInt.fromI32(40);
+    rootsStatus.totalSold = BigInt.fromI32(0);
+    rootsStatus.totalBurned = BigInt.fromI32(0);
+    rootsStatus.primarySalePrice = contract.price();
+  }
 
-export function handleTransfer(event: Transfer): void {}
+  let fromWallet = Wallet.load(fromAddress.toHexString());
+  if (!fromWallet) {
+    fromWallet = new Wallet(fromAddress.toHexString());
+    fromWallet.address = fromAddress;
+    fromWallet.save();
+  }
+
+  let toWallet = Wallet.load(toAddress.toHexString());
+  if (!toWallet) {
+    toWallet = new Wallet(toAddress.toHexString());
+    toWallet.address = toAddress;
+    toWallet.save();
+  }
+
+  // Burn
+  if (toWallet.id === "0x0000000000000000000000000000000000000000") {
+    rootsStatus.maxPhotos = BigInt.fromI32(
+      rootsStatus.maxPhotos.minus(BigInt.fromI32(1)).toI32()
+    );
+    rootsStatus.totalBurned = BigInt.fromI32(
+      rootsStatus.totalBurned.plus(BigInt.fromI32(1)).toI32()
+    );
+  }
+
+  let token = RootsPhoto.load(tokenId.toString());
+  if (!token) {
+    token = new RootsPhoto(tokenId.toString());
+    token.tokenId = tokenId;
+    token.tokenURI = contract.tokenURI(tokenId);
+    token.primarySaleAt = event.block.timestamp;
+    token.primarySalePrice = contract.price();
+    token.primarySaleBuyer = toWallet.id;
+    token.ownerHistory.push(fromWallet.id);
+    rootsStatus.totalSold = rootsStatus.totalSold.plus(BigInt.fromI32(1));
+  }
+
+  token.owner = toWallet.id;
+  token.ownerHistory.push(toWallet.id);
+  token.save();
+  rootsStatus.save();
+
+  let transfer = new Transfer(
+    event.transaction.hash.toHex() + "-" + event.logIndex.toString()
+  );
+
+  transfer.photo = token.id;
+  transfer.from = fromWallet.id;
+  transfer.to = toWallet.id;
+  transfer.txHash = event.transaction.hash;
+  transfer.timestamp = event.block.timestamp;
+  transfer.save();
+}

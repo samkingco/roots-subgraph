@@ -1,6 +1,34 @@
-type ExampleEntity @entity {
+type RootsPhoto @entity {
   id: ID!
-  count: BigInt!
-  owner: Bytes! # address
-  spender: Bytes! # address
+  tokenId: BigInt!
+  tokenURI: String!
+  primarySaleAt: BigInt!
+  primarySalePrice: BigInt!
+  primarySaleBuyer: Wallet!
+  owner: Wallet!
+  ownerHistory: [Wallet!]!
+  transfers: [Transfer!]! @derivedFrom(field: "photo")
+}
+
+type Wallet @entity {
+  id: ID!
+  address: Bytes!
+  photos: [RootsPhoto!]! @derivedFrom(field: "owner")
+}
+
+type RootsStatus @entity {
+  id: ID!
+  maxPhotos: BigInt!
+  totalSold: BigInt!
+  totalBurned: BigInt!
+  primarySalePrice: BigInt!
+}
+
+type Transfer @entity {
+  id: ID!
+  photo: RootsPhoto!
+  from: Wallet!
+  to: Wallet!
+  txHash: Bytes!
+  timestamp: BigInt!
 }
